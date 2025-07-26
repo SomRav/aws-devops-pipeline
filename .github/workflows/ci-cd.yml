@@ -45,7 +45,7 @@ jobs:
 
     - name: Build Docker image
       run: |
-        docker build -t test-app:${{ github.sha }} ./docker
+        docker build -t test-app:${{ github.sha }} -f docker/Dockerfile .
 
     - name: Run Trivy vulnerability scanner
       run: |
@@ -193,7 +193,7 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
         # Build, tag, and push image
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} ./docker
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} -f docker/Dockerfile .
         docker tag $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} $ECR_REGISTRY/$ECR_REPOSITORY:latest
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest

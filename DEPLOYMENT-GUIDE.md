@@ -29,10 +29,16 @@ Your AWS infrastructure is currently being deployed via Terraform.
 AWS_ACCESS_KEY_ID = "your-aws-access-key"
 AWS_SECRET_ACCESS_KEY = "your-aws-secret-access-key"  
 GITHUB_TOKEN = "your-github-token"
-SSH_PUBLIC_KEY = "ssh-rsa AAAAB3NzaC1yc2E..."
+SSH_PUBLIC_KEY = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDTGDDI2td+1Io9HksggQmhqVWukaH8NjZlribltN4j/yRaQzF1K921HCoKRAAZUhCr9yWfbc0boKRKKROldhQnv1Z/MZcruHzptTOgQh8Wro1D/03WGLGM+bxqIJgGiesVLSxziwpJb4uSiUxDvYuJm3zjSGhbppk3f+OyO9Dy8Irn0g3mu2PSYtyoIj8XB4/WMF5ii15tR4zzCFmt5szKVsSSjMNJCF7fmCP0+LUms72vm3AvIX5y7qupX8t3v/O11cxiQvO7hJ8GoO2hbrf3kaBRm5yY3IROeorXXKprTtYqY3JtKfJFDAOIOc3iuDYEnUTO2jHlfrCiZhXpDtMpIEd user@hostname"
 PROJECT_NAME = "devops-pipeline"
 ALLOWED_IP_RANGE = "0.0.0.0/0"
 ECR_REPOSITORY = "devops-pipeline-app"  # From Terraform output
+```
+
+**📋 To generate your own SSH key:**
+```bash
+ssh-keygen -t rsa -b 2048 -f ~/.ssh/aws_devops_key -N ""
+cat ~/.ssh/aws_devops_key.pub  # Use this as SSH_PUBLIC_KEY
 ```
 
 #### 3. Push Code to GitHub
