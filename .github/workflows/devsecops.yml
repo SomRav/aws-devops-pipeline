@@ -1,0 +1,210 @@
+name: DevSecOps CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: dp-app
+
+jobs:
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run tfsec for Terraform
+      uses: aquasecurity/tfsec-action@v1.0.0
+      with:
+        soft_fail: true
+        format: sarif
+        output: tfsec.sarif
+
+    - name: Upload tfsec results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: tfsec.sarif
+
+    - name: Build Docker image for scanning
+      run: |
+        docker build -f docker/Dockerfile -t test-image:latest .
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'test-image:latest'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: security-scan
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: app/package-lock.json
+
+    - name: Install dependencies
+      run: |
+        cd app
+        npm ci
+
+    - name: Run tests
+      run: |
+        cd app
+        npm test
+
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: [security-scan, test]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.0
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan \
+          -var="github_token=${{ secrets.GITHUB_TOKEN }}" \
+          -var="public_key=${{ secrets.EC2_PUBLIC_KEY }}" \
+          -out=tfplan
+
+    - name: Save Terraform Plan
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-plan
+        path: terraform/tfplan
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [security-scan, test]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.0
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply -auto-approve \
+          -var="github_token=${{ secrets.GITHUB_TOKEN }}" \
+          -var="public_key=${{ secrets.EC2_PUBLIC_KEY }}"
+
+  setup-sealed-secrets:
+    name: Setup Sealed Secrets
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    # Note: This step assumes you have an EKS cluster
+    # If not using EKS, you'll need to modify this section
+    - name: Update kubeconfig
+      run: |
+        # Uncomment if using EKS
+        # aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name your-cluster-name
+        echo "Kubeconfig setup - modify based on your Kubernetes setup"
+
+    - name: Install Sealed Secrets Controller
+      run: |
+        # Install sealed-secrets controller if not already installed
+        kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.0/controller.yaml || true
+
+    - name: Apply Sealed Secrets
+      run: |
+        # Apply sealed secrets to cluster
+        kubectl apply -f k8s/sealed-secret.yaml || true
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, setup-sealed-secrets]
+    if: always()
+    
+    steps:
+    - name: Notify Success
+      if: needs.deploy-infrastructure.result == 'success'
+      run: |
+        echo "✅ Deployment completed successfully!"
+        echo "Pipeline URL: https://console.aws.amazon.com/codesuite/codepipeline/pipelines/"
+
+    - name: Notify Failure
+      if: needs.deploy-infrastructure.result == 'failure'
+      run: |
+        echo "❌ Deployment failed!"
+        exit 1
