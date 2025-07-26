@@ -27,7 +27,7 @@ Your AWS infrastructure is currently being deployed via Terraform.
 # Add these secrets:
 
 AWS_ACCESS_KEY_ID = "your-aws-access-key"
-AWS_SECRET_ACCESS_KEY = "your-aws-secret-key"  
+AWS_SECRET_ACCESS_KEY = "your-aws-secret-access-key"  
 GITHUB_TOKEN = "your-github-token"
 SSH_PUBLIC_KEY = "ssh-rsa AAAAB3NzaC1yc2E..."
 PROJECT_NAME = "devops-pipeline"
